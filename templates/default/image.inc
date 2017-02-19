@@ -1,0 +1,6 @@
+IMAGE_INSTALL += "i2c-tools"
+IMAGE_INSTALL += "canutils"
+IMAGE_INSTALL += "oprofile"
+IMAGE_INSTALL += "pm-utils"
+IMAGE_INSTALL += "alsa-utils"
+IMAGE_INSTALL += "mtdev"

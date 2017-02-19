@@ -1,0 +1,567 @@
+i.MX6Q Sabre-SD Board Support Package
+
+
+1. About this document
+======================
+This document describes common and non-hardware specific information.
+Please refer to README.hardware for hardware specific information.
+
+Dependencies
+------------
+This layer depends on the oe-core version supplied with Wind River
+Linux and the wr-kernel layer.
+
+Maintenance
+-----------
+This layer is maintained by Wind River Systems, Inc.
+Contact <support@windriver.com> or your support representative for more
+information on submitting changes.
+
+Building the fsl-imx6 layer
+---------------------------
+This layer and wr-kernel layer should be added to bblayers.conf. This
+is done automatically when using the Wind River configure wrapper.
+
+License
+-------
+Copyright (C) 2015 Wind River Systems, Inc.
+
+The right to copy, distribute or otherwise make use of this software may
+be licensed only pursuant to the terms of an applicable Wind River license
+agreement. No license to Wind River intellectual properly rights is granted
+herein. All rights not licensed by Wind River are reserved by Wind River.
+
+Source code included in tree for individual recipes is under the LICENSE
+stated in each recipe (.bb file) unless other stated.
+
+2. BSP Kernel and RootFS Combination
+====================================
+
+The validity of WindRiver Linux kernel and RootFS combination for this BSP is
+in the table.
+The leftmost column of the table is the kernel type, and the top line is the
+RootFS type.
+'Y' in each content cell stands for the combination is supported; 'N' stands
+for not supported:
+
+--------------------------------------------------------------------
+| kernel/rootfs | glibc_std | glibc_small | glibc_cgl | glibc_tiny |
+--------------------------------------------------------------------
+|   standard    |     Y     |      Y      |     N     |     N      |
+--------------------------------------------------------------------
+|   preempt_rt  |     Y     |      Y      |     N     |     N      |
+--------------------------------------------------------------------
+|   cgl         |     N     |      N      |     N     |     N      |
+--------------------------------------------------------------------
+
+Note: with regard to the kernel and RootFS type, please refer to WindRiver Linux
+specification for details.
+
+3. Board Specific Patches
+=========================
+To get a list of patches applied to the kernel specific to this BSP along
+with patch descriptions use git-whatchanged on the default kernel. For example:
+
+	# cd bitbake_build/tmp/work-shared/fsl-imx6/kernel-source
+	# git whatchanged standard/base..
+
+
+4. Boot Instructions
+====================
+
+4.1 MMC/SD Boot
+---------------
+
+4.1.1 Create partitions
+-----------------------
+You can use bootloader/create-sdcard.sh to fastly create partitions:
+
+	sudo ./create-sdcard.sh /dev/${your sdcard}
+
+Or you can manually create partitions as follow:
+
+(1) To identify the device node assigned to the SD/MMC card, enter the command:
+
+	# cat /proc/partitions
+	major minor	  #blocks name
+	8	0	 78125000 sda
+	8	1	 75095811 sda1
+	8	2	        1 sda2
+	8	5	  3028221 sda5
+	8	32	488386584 sdc
+	8	33	488386552 sdc1
+	8	16	  3921920 sdb
+	8	18	  3905535 sdb1
+
+In this example, the device node assigned is /dev/sdb.
+
+(2) Create partitions on the MMC/SD card.
+
+Run the following shell script with sudo to create a partition,
+you need umount your sdcard if it has been mount.
+
+	#!/bin/bash
+
+	#please input you sdcard device name, for example /dev/sdb
+	DRIVE=""
+
+	dd if=/dev/zero of=$DRIVE bs=1024 count=1024
+	SIZE=`fdisk -l $DRIVE | grep Disk | awk '{print $5}'`
+	echo DISK SIZE - $SIZE bytes
+	CYLINDERS=`echo $SIZE/255/63/512 | bc`
+	sfdisk -D -H 255 -S 63 -C $CYLINDERS $DRIVE << EOF
+	1,12,0x0C,*
+	13,,,-
+	EOF
+
+Suppose the device node for MMC/SD card on the host machine is /dev/sdb.
+
+Note: The first 8MB can be reserved for MBR, bootloader, and kernel sections,
+the rootfs partition should be located after kernel image.
+
+(3) Create a filesystem on the first partition.
+
+Format it with vfat:
+
+	# mkfs.vfat /dev/sdb1
+
+(4) Create a filesystem on the second partition.
+
+Format it with one of the most popular filesystem types supported by Linux,
+for instance, ext3.
+
+	# mkfs.ext3 /dev/sdb2
+
+
+4.1.2 Decompress MMC/SD root filesystem
+---------------------------------------
+
+mount it and deploy the root filesystem image there:
+
+	# mkdir /mnt/sd
+	# mount /dev/sdb2 /mnt/sd
+	# cd <buildprj>/export/
+	# tar -C /mnt/sd -jxf fsl-imx6-wrlinux-image-glibc-std-standard-dist.tar.bz2 --numeric-owner
+
+
+4.1.3 Deploy u-boot, dtb and kernel to SD/MMC
+----------------------------------------------
+
+(1) Copying the Boot Loader Image
+
+Enter the following command to copy the U-Boot image to the SD/MMC card:
+
+	# sudo dd if=u-boot-mx6q-${board name}.imx of=/dev/sdb bs=512 seek=2 conv=fsync
+
+This assumes a pre-build U-Boot image delivered with the BSP or built from
+the U-Boot source code. The first 1 KB of the SD/MMC card, that includes
+the partition table, will be preserved.
+
+The boot modes of the board are controlled by the boot configuration
+DIP switches. To locate the boot configuration switches, see the
+section 4.3.1 of the README.hardware
+
+(2) Copying the Kernel Image and dtb to the SD/MMC
+
+The following command will copy the kernel image to the first partition SD/MMC card:
+
+	# mkdir /mnt/sd
+	# mount -t vfat /dev/sdb1 /mnt/sd
+	# cd <buildprj>/export/
+	# cp -rf fsl-imx6-zImage-x.x.x.x_kernel_type /mnt/sd
+	# cp -rf fsl-imx6-imx6q-sabresd-ldo.dtb-x.x.x.x_kernel_type /mnt/sd
+	# cp -rf fsl-imx6-imx6q-sabresd.dtb-x.x.x.x_kernel_type /mnt/sd
+	# cp -rf fsl-imx6-imx6sx-sdb.dtb-x.x.x.x_kernel_type /mnt/sd
+	# cp -rf fsl-imx6-mx6ul-14x14-evk.dtb-x.x.x.x_kernel_type /mnt/sd
+
+
+4.1.4 Load kernel from MMC/SD to memory
+---------------------------------------
+Note: all commands in this section are executed in u-boot command line.
+
+The Sabre-AI board includes two MMC/SD controllers, Just only the CPU
+board' SD slot can be used. In u-boot, Using mmc0 to it.
+
+The Sabre-SD board includes three MMC/SD controllers: SD2, SD3, and SD4.
+In u-boot, Using mmc1, mmc2 and mmc3 to it respectively.
+
+The imx6ul-evk board uses micro SD to boot by default.
+
+Set the active mmc card and partition.
+
+	# mmc dev $disk[:$partition]
+
+For example:
+
+	# mmc dev 0		/* Activate the mmc0 card */
+
+Or
+	# mmc dev 1		/* Activate the mmc1 card */
+
+Note that the partition is an optional argument since not all cards can
+support partitions. If your card does not have this capability, do not add
+the partition argument into the command. Currently there is no simple
+non-runtime way to determine if a card supports partitions or not.
+
+
+Then load the dtb and kernel image from the activated MMC/SD card:
+
+	# mmc rescan
+	# fatload mmc $disk:1 0x12000000 fsl-imx6-zImage-x.x.x.x_kernel_type
+	# fatload mmc $disk:1 0x18000000 ${fdt_file}
+
+Note: The Sabre SD use fsl-imx6-imx6q-sabresd.dtb-x.x.x.x_kernel_type.
+
+4.1.5 Set bootargs and boot system
+----------------------------------
+
+	For i.MX6Q/S:
+	# setenv bootargs console=ttymxc0,115200 root=/dev/mmcblk{N}p${M} rw \
+		 rootwait video=mxcfb0:dev=hdmi,1920x1080M@60,if=RGB24
+	# bootz
+
+	For i.MX6UL:
+	# setenv bootargs console=ttymxc0,115200 root=/dev/mmcblk{N}p${M} rw rootwait
+	# bootz
+
+In the bootargs root=/dev/mmcblk{N}p${M}, Both N and M describe the disk
+number and partition number.
+
+
+4.2 NFS Root File System
+------------------------
+
+4.2.1 Prepare Kernel, DTB, NFS and TFTP servers
+-----------------------------------------------
+The files in below example can be found in <buildprj>/export/images and
+are copied to the export directory of the TFTP server.
+
+4.2.2 Download kernel
+---------------------
+
+	# tftp 0x12000000 fsl-imx6-zImage-x.x.x.x_kernel_type
+
+4.2.3 Download dtb
+------------------
+
+	# tftp 0x18000000 fsl-imx6-xxxxxx.dtb-x.x.x.x_kernel_type
+
+4.2.4 Set bootargs and boot system
+----------------------------------
+
+	For i.MX6Q/S:
+	# setenv bootargs console=ttymxc0,115200 root=/dev/nfs rw \
+		 nfsroot=<nfs server>:<nfs root>,v3,tcp \
+		 ip=<target IP>::<gateway>:<netmask>::eth0:off \
+		 video=mxcfb0:dev=hdmi,1920x1080M@60,if=RGB24
+	# bootz 0x12000000 - 0x18000000
+
+	For i.MX6UL:
+	Note, the HDMI transmitter and NAND flash are not soldered onto the board.
+	Please refer to i.IMX6UltraLite EVK Board hardware user's guide for information
+	about how to use them.
+
+	# setenv bootargs console=ttymxc0,115200 root=/dev/nfs rw \
+		 nfsroot=<nfs server>:<nfs root>,v3,tcp \
+		 ip=<target IP>::<gateway>:<netmask>::eth0:off
+	# bootz 0x12000000 - 0x18000000
+
+
+5. Features
+===========
+
+Some peripherals and drivers have been tested by the libraries and testcases
+in the imx-lib and imx-test packages. These two packages are in the Freescale
+SDK, users can build them under the Freescale openembedded-core layer of the
+meta-fsl-arm environment. Please reference https://github.com/Freescale/meta-fsl-arm
+for the build detail  After the build completes, all testcases are installed to
+${fsl_target_rootfs}/unit_tests, all needed libs are installed to
+${fsl_target_rootfs}/usr/lib, all needed firmwares are installed to
+${fsl_target_rootfs}/lib/firmware/vpu, where fsl_target_rootfs parameter points
+to the path of the root filesystem after building freescale SDK.
+
+Copy those testcases to the rootfs of the i.MX6Q Board: (Suppose target
+rootfs has been properly deployed onto a MMC/SD card as in 3.2 section)
+
+	# cp ${fsl_target_rootfs}/unit_tests /mnt/sd -rf
+	# cp ${fsl_target_rootfs}/usr/lib/libvpu.* /mnt/sd/usr/lib/ -rf
+	# cp ${fsl_target_rootfs}/usr/lib/libipu.* /mnt/sd/usr/lib/ -rf
+	# cp ${fsl_target_rootfs}/lib/firmware/vpu /mnt/sd/lib/firmware/ -rf
+	# umount /mnt/sd
+
+
+5.1 fbdev HDMI
+--------------
+
+To enable HDMI as the default framebuffer device, please add:
+
+	video=mxcfb0:dev=hdmi,1920x1080M@60,if=RGB24
+
+in the bootargs parameter of u-boot.
+
+5.2 fbdev LVDS
+--------------
+
+"ldb=spl0/1"       --      split mode on DI0/1
+"ldb=dul0/1"       --      dual mode on DI0/1
+"ldb=sin0/1"       --      single mode on LVDS0/1
+"ldb=sep0/1"       --      separate mode begin from LVDS0/1
+
+There are two LVDS channels(LVDS0 and LVDS1) which can transfer video
+datas, there two channels can be used as split/dual/single/separate mode.
+
+split mode means display data from DI0 or DI1 will send
+to both channels LVDS0 + LVDS1.
+
+dual mode means display data from DI0 or DI1 will be
+duplicated on LVDS0 and LVDS1. it said, LVDS0 and LVDS1
+has the same content.
+
+single mode means only work for DI0/DI1->LVDS0 or DI0/DI1->LVDS1.
+
+separate mode means you can make DI0/DI1->LVDS0 and DI0/DI1->LVDS1
+work at the same time.
+
+
+To enable LVDS as the default framebuffer device, please add
+
+	For LVDS0 connection:
+	video=mxcfb0:dev=ldb,LDB-XGA,if=RGB666
+
+	For LVDS1 connection:
+	video=mxcfb0:dev=ldb,LDB-XGA,if=RGB666 ldb=sin1
+
+in the bootargs parameter of u-boot.
+
+
+5.3 VPU
+-------
+
+To test VPU, ensure that HDMI is the default fbdev. Please refer to above
+section 4.1 to set the bootargs of u-boot. Then execute following commands:
+
+	# cd /unit_tests/
+	# ./mxc_vpu_test.out -D "-i ./akiyo.mp4 -f 0 -t 1"
+
+5.4 V4L2 output/capture and camera
+----------------------------------
+
+Enable HDMI as default fbdev as stated in above section 4.1. Then execute
+the following commands:
+
+	# cd /unit_tests/
+	# ./mxc_v4l2_overlay.out -iw 640 -ih 480 -ow 640 -oh 480 -m 0 -di /dev/video1 -fg
+
+5.5 USB feature
+---------------
+
+5.5.1 USB OTG Usage and verification
+------------------------------------
+
+1. Verify the OTG device mode
+
+Plug in B cable and connect to the host machine.
+
+board configure:
+
+	# ifconfig usb0 192.168.1.10
+
+Host machine configure:
+
+	# sudo ifconfig usb0 192.168.1.100
+	# ping 192.168.1.10 -c 2
+	PING 192.168.1.10 (192.168.1.10) 56(84) bytes of data.
+	64 bytes from 192.168.1.10: icmp_req=1 ttl=64 time=2.06 ms
+	64 bytes from 192.168.1.10: icmp_req=2 ttl=64 time=0.286 ms
+	...
+
+2. Switch to the OTG host mode
+
+Replace the B cable with the A cable.
+
+
+5.6 Audio
+---------
+
+5.6.1 Audio capture and playback(WM8962)
+----------------------------------------
+
+1. Capture
+
+Set the parameter to fit the codec and then record audio messages:
+
+	For i.MX6Q/S:
+	# amixer set 'MIXINR IN3R' on
+	# amixer set 'INPGAR IN3R' on
+
+	For i.MX6UL:
+	# amixer cset name='ADC PCM Capture Volume' 80%,80%
+
+	# arecord -Dplughw:0,0 -r 44100 -f S16_LE -c 2 -d 5 record.wav
+
+2. Playback
+
+	For i.MX6Q/S:
+	# amixer cset name='Headphone Volume' 127
+
+	FOr i.MX6UL:
+	# amixer cset name="Headphone Playback Volume" 80%,80
+
+	# aplay  record.wav
+
+
+5.6.2 Audio HDMI playback
+-------------------------
+
+Connect the board and a HDMI display with a HDMI cable,
+then enable fbdev HDMI as in 4.1 section.
+
+Play the recorded audio messages:
+
+	# aplay -Dhw:1,0 record.wav
+
+
+5.7 Static PM
+-------------
+
+The debug UART can be set as a wakeup source with:
+	# echo enabled > /sys/class/tty/ttymxc0/power/wakeup
+	# echo mem > /sys/power/state
+
+5.8 CPU frequency
+------------------
+
+The CPU frequency scaling allows the clock speed of the CPU to be
+changed on the fly.
+
+	# echo powersave > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+	# cat /proc/cpuinfo
+
+5.9 Backlight
+--------------
+
+	# echo intensity >/sys/class/backlight/backlight.29/brightness
+
+5.10 ANATOP thermal
+-------------------
+
+	To check current CPU temperature
+	# cd /sys/class/thermal/thermal_zone0
+	# cat temp
+	39445
+	# cat trip_point_0_type
+	passive
+	# cat trip_point_0_temp
+	85000
+	# echo 39445 > trip_point_0_temp
+	System is too hot. GPU3D will work at 1/64 clock.
+
+	# cat trip_point_1_type
+	critical
+	# echo 39445 > trip_point_1_temp
+	The system will shutdown
+
+5.11 Touch Screen
+-----------------
+
+	# mtdev-test /dev/input/event0
+
+5.12 OProfile
+------------
+
+This BSP does not have an available hardware performance counter,
+so OProfile must resort to the timer mode. If you are using OProfile
+you need to add "oprofile.timer=1" to the kernel boot options.
+
+5.13 PCIe
+--------
+
+Since the PCIe connector on-board only exports PETP0/N0, PERP0/N0 and 3.3V
+pins, any mini-PCIe devices that use other PCIe pins won't be supported.
+The following PCIe peripherals are validated:
+
+	Intel Centrino Advanced-N 6205
+	Intel Centrino Wireless-N 1030
+
+via the following steps:
+
+Simply including in your configure line as follows:
+
+	--enable-kernel=standard+features/iwlwifi/iwlwifi.scc
+
+This will include the iwlwifi and mac80211 kernel modules in
+the root filesystem.
+
+Make the consistency for them(Built and install)
+
+	# make -C build wireless-tools.addpkg
+	# make fs
+
+Copy relevant firmware(Intel 6205 WiFi firmware: iwlwifi-6000g2a-5.ucode)
+of WiFi cards into /lib/firmware of target rootfs.
+
+Execute the following commands to validate WiFi cards:
+
+	# ifconfig wlan0 up
+	# iwconfig wlan0 essid <AP essid>
+	# dhclient wlan0
+	# ping <AP address> -i wlan0 -c 1
+
+Note, the PCIe driver so far does not support hotplug and suspend/resume.
+
+5.14 Graphics/GPU
+-----------------
+
+Since the graphics support in the fsl-imx6 is provided via binaries,
+the graphics package must be compiled according to Freescale's EULA.
+
+Using the template to configure the project:
+
+	$ ../wrlinux/configure --enable-board=fsl-imx6 \
+		--enable-rootfs=glibc_std_sato \
+		--with-layer=wr-bsps/fsl-imx6/wr-imx6-graphic
+
+Note:
+You must change the configuration to allow download some package from the
+internet. Change BB_NO_NETWORK ?= "1" to BB_NO_NETWORK ?= "0" in the file of
+${buildprj}/bitbake_build/conf/local.conf.
+
+5.15 Tune
+-----------------
+This BSP use "armv7athf-neon" as the default tune. This tune supports both
+cortexa9 and cortexa7, but may not have the best optimization. If you use
+this BSP for the boards "i.MX 6Quad SABRE-SD" and "i.MX 6SoloX SABRE-SD" and
+want to have the better optimization from tune, you may change DEFAULTTUNE
+from "armv7athf-neon" to "cortexa9thf-neon" locally for a project in
+${projectdir}/local.conf.
+
+6. kexec/kdump
+==============
+
+For discussion purposes, some useful terminology will be described here.
+
+boot kernel - the first one that you start and supports kexec, from u-boot
+	      for instance
+capture kernel - the kernel that you reboot into after a boot kernel crash
+
+To build the boot kernel, use the following configure option to configure
+the project:
+
+     --with-template=feature/kexec,feature/kdump
+
+To reserve a memory region for capture kernel, you need to pass the bootargs argument "crashkernel"
+as follow:
+
+for I.MX6Q:
+    crashkernel=512M@512M
+for I.MX6Ul and I.MX6SX:
+    crashkernel=256M@2304M
+
+For dump-capture kernel:
+Before boot dump-capture kernel, please add "maxcpus=1" to the boot parameter.
+Note: please use zImage as a secondary kernel. It can be found in the
+  build/linux-windriver/4.1-r0/linux-fsl_imx6-standard-build/arch/arm/boot
+directory.
+
+For more detailed info about kdump, please refer to Documentation/kdump/kdump.txt
+in the kernel source tree.

@@ -6,7 +6,7 @@
 
 FILESEXTRAPATHS_prepend := "${THISDIR}/files:"
 
-SRC_URI_append_fsl-imx6 += "file://asound.state \
+SRC_URI_append_nxp-imx6 += "file://asound.state \
 	   "
 
 do_install_append() {

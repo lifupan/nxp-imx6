@@ -1,1 +1,1 @@
-require linux-windriver-fsl-imx6.inc
+require linux-windriver-nxp-imx6.inc

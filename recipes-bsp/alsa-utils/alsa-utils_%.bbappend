@@ -4,12 +4,13 @@
 #
 #
 
-FILESEXTRAPATHS_prepend := "${THISDIR}/files:"
+FILESEXTRAPATHS_prepend_nxp-imx6 := "${THISDIR}/files:"
 
 SRC_URI_append_nxp-imx6 += "file://asound.state \
 	   "
 
-do_install_append() {
+do_install_append_nxp-imx6() {
 	install -m 0644 ${WORKDIR}/asound.state ${D}/var/lib/alsa/asound.state
 }
 
+PACKAGE_ARCH = "${MACHINE_ARCH}"

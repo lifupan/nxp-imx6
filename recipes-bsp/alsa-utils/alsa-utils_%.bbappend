@@ -13,4 +13,4 @@ do_install_append_nxp-imx6() {
 	install -m 0644 ${WORKDIR}/asound.state ${D}/var/lib/alsa/asound.state
 }
 
-PACKAGE_ARCH = "${MACHINE_ARCH}"
+PACKAGE_ARCH_nxp-imx6 = "${MACHINE_ARCH}"

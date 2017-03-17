@@ -9,7 +9,7 @@ FILESEXTRAPATHS_prepend := "${THISDIR}/files:"
 SRC_URI_append_fsl-imx6 += "file://asound.state \
 	   "
 
-do_install_append() {
+do_install_append_fsl-imx6() {
 	install -m 0644 ${WORKDIR}/asound.state ${D}/var/lib/alsa/asound.state
 }
 

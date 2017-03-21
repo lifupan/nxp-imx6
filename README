@@ -509,24 +509,7 @@ Execute the following commands to validate WiFi cards:
 
 Note, the PCIe driver so far does not support hotplug and suspend/resume.
 
-5.14 Graphics/GPU
------------------
-
-Since the graphics support in the fsl-imx6 is provided via binaries,
-the graphics package must be compiled according to Freescale's EULA.
-
-Using the template to configure the project:
-
-	$ ../wrlinux/configure --enable-board=fsl-imx6 \
-		--enable-rootfs=glibc_std_sato \
-		--with-layer=wr-bsps/fsl-imx6/wr-imx6-graphic
-
-Note:
-You must change the configuration to allow download some package from the
-internet. Change BB_NO_NETWORK ?= "1" to BB_NO_NETWORK ?= "0" in the file of
-${buildprj}/bitbake_build/conf/local.conf.
-
-5.15 Tune
+5.14 Tune
 -----------------
 This BSP use "armv7athf-neon" as the default tune. This tune supports both
 cortexa9 and cortexa7, but may not have the best optimization. If you use
